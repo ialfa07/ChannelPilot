@@ -140,7 +140,7 @@ def setup_handlers(dp, config: Config):
                     member_count = await get_channel_subscriber_count(message.bot, channel_id)
                     
                     status_text += f"📢 **{chat.title}**\n"
-                    status_text += f"• ID: `{channel_id}`\n"
+                    status_text += f"• ID: {channel_id}\n"
                     status_text += f"• Abonnés: {member_count}\n"
                     status_text += f"• Sondages: {'✅' if member_count >= 500 else '❌ (< 500)'}\n"
                     status_text += f"• Actif: {'✅' if channel_info.get('active', True) else '❌'}\n\n"
@@ -178,7 +178,7 @@ def setup_handlers(dp, config: Config):
                     member_count = await get_channel_subscriber_count(message.bot, channel_id)
                     
                     channels_text += f"📢 **{chat.title}**\n"
-                    channels_text += f"• ID: `{channel_id}`\n"
+                    channels_text += f"• ID: {channel_id}\n"
                     channels_text += f"• Username: @{chat.username if chat.username else 'N/A'}\n"
                     channels_text += f"• Abonnés: {member_count}\n"
                     channels_text += f"• Description: {chat.description[:50] + '...' if chat.description else 'N/A'}\n\n"
@@ -317,6 +317,29 @@ def setup_handlers(dp, config: Config):
             parse_mode="Markdown"
         )
     
+    # Handle messages in channels (for detecting channel IDs)
+    @router.message(F.chat.type.in_({"channel", "supergroup"}))
+    async def handle_channel_message(message: Message):
+        """Handle messages in channels to detect channel IDs"""
+        try:
+            if message.text and "@Link_CenterBot" in message.text:
+                channel_id = str(message.chat.id)
+                channel_name = message.chat.title or "Canal"
+                
+                logger.info(f"Bot mentioned in channel: {channel_name} (ID: {channel_id})")
+                
+                # Send info message to channel
+                await message.reply(
+                    f"🤖 **Canal Détecté !**\n\n"
+                    f"**Nom :** {channel_name}\n"
+                    f"**ID :** {channel_id}\n\n"
+                    f"Pour ajouter ce canal à la gestion automatique, "
+                    f"contactez l'administrateur avec ces informations.",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Error handling channel message: {e}")
+
     # Channel member updates handler
     @router.chat_member(ChatMemberUpdatedFilter(member_status_changed=KICKED >> MEMBER))
     @router.chat_member(ChatMemberUpdatedFilter(member_status_changed=LEFT >> MEMBER))
