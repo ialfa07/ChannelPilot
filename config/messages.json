@@ -1,0 +1,12 @@
+{
+  "welcome_message": "Bienvenue, {username} ! Merci de nous avoir rejoints 🎉",
+  "daily_messages": [
+    "Nouveau jour, nouvelle énergie ! 🔥 Passez une excellente journée !",
+    "Bonjour ! 🌅 Que cette journée vous apporte de belles surprises !",
+    "Bonne journée à tous ! 💪 Restons motivés ensemble !",
+    "Salut la communauté ! ☀️ Une nouvelle journée pleine de possibilités !",
+    "Hello ! 🚀 Prêts à conquérir cette journée ?",
+    "Bonjour ! 🌟 Ensemble, nous sommes plus forts !",
+    "Bonne journée ! 🎯 Fixons-nous de beaux objectifs aujourd'hui !"
+  ]
+}

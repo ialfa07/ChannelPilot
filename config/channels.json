@@ -1,0 +1,8 @@
+{
+  "_example_channel_id": {
+    "name": "Mon Canal",
+    "active": true,
+    "description": "Description du canal",
+    "added_date": "2025-01-01"
+  }
+}
