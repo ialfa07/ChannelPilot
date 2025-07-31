@@ -3,6 +3,7 @@ Bot handlers for commands and events
 """
 
 import logging
+from datetime import datetime
 from typing import Dict, Any
 from aiogram import Router, F
 from aiogram.types import Message, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
@@ -43,10 +44,12 @@ def setup_handlers(dp, config: Config):
             "Commandes disponibles :\n"
             "• `/help` - Afficher l'aide\n"
             "• `/register_admin mot_de_passe` - Devenir administrateur\n"
+            "• `/cid` - Obtenir l'ID du canal (dans le canal)\n"
+            "• `/add_channel ID nom` - Ajouter un canal (admin)\n"
             "• `/status` - Statut des canaux (admin)\n"
+            "• `/channels` - Liste des canaux gérés (admin)\n"
             "• `/customize_poll` - Personnaliser le sondage du jour (admin)\n"
-            "• `/test_welcome` - Tester le message de bienvenue (admin)\n"
-            "• `/channels` - Liste des canaux gérés (admin)\n\n"
+            "• `/test_welcome` - Tester le message de bienvenue (admin)\n\n"
             "Fonctionnalités :\n"
             "✅ Messages de bienvenue automatiques\n"
             "✅ Messages quotidiens programmés\n"
@@ -94,6 +97,116 @@ def setup_handlers(dp, config: Config):
         )
         
         logger.info(f"User {username} (ID: {user_id}) successfully registered as admin")
+    
+    @router.message(Command("add_channel"))
+    async def cmd_add_channel(message: Message):
+        """Handle /add_channel command"""
+        if not message.from_user or not await is_admin(message.from_user.id, config):
+            await message.answer("❌ Commande réservée aux administrateurs.")
+            return
+        
+        if not message.text:
+            await message.answer("❌ Erreur de commande.")
+            return
+            
+        # Extract channel ID and name from command
+        args = message.text.split(maxsplit=2)
+        if len(args) < 3:
+            await message.answer(
+                "❌ Usage: `/add_channel -1001234567890 Nom du Canal`\n\n"
+                "Exemple: `/add_channel -1001234567890 Mon Super Canal`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        channel_id = args[1]
+        channel_name = args[2]
+        
+        # Validate channel ID format
+        if not channel_id.startswith('-'):
+            await message.answer("❌ L'ID du canal doit commencer par '-' (exemple: -1001234567890)")
+            return
+        
+        try:
+            # Test if bot can access the channel
+            if message.bot:
+                chat = await message.bot.get_chat(channel_id)
+                member_count = await get_channel_subscriber_count(message.bot, channel_id)
+                
+                # Add channel to configuration
+                channel_info = {
+                    "name": channel_name,
+                    "active": True,
+                    "description": f"Canal ajouté le {datetime.now().strftime('%Y-%m-%d')}",
+                    "added_date": datetime.now().strftime('%Y-%m-%d')
+                }
+                
+                config.add_channel(channel_id, channel_info)
+                
+                await message.answer(
+                    f"✅ **Canal ajouté avec succès !**\n\n"
+                    f"**Nom :** {chat.title}\n"
+                    f"**ID :** {channel_id}\n"
+                    f"**Abonnés :** {member_count}\n"
+                    f"**Status :** Actif\n\n"
+                    f"Le bot va maintenant gérer automatiquement :\n"
+                    f"• Messages de bienvenue\n"
+                    f"• Messages quotidiens à 9h00\n"
+                    f"• Sondages quotidiens à 10h00 (si ≥500 abonnés)",
+                    parse_mode="Markdown"
+                )
+                
+                logger.info(f"Channel {channel_name} ({channel_id}) added by admin {message.from_user.id}")
+                
+        except Exception as e:
+            logger.error(f"Error adding channel {channel_id}: {e}")
+            await message.answer(
+                f"❌ **Erreur lors de l'ajout du canal**\n\n"
+                f"Vérifiez que :\n"
+                f"• L'ID du canal est correct\n"
+                f"• Le bot est administrateur du canal\n"
+                f"• Le bot a les permissions nécessaires\n\n"
+                f"Erreur: {str(e)[:100]}",
+                parse_mode="Markdown"
+            )
+    
+    @router.message(Command("cid"))
+    async def cmd_get_channel_id(message: Message):
+        """Handle /cid command - get channel ID"""
+        try:
+            if message.chat.type in ["channel", "supergroup"]:
+                channel_id = str(message.chat.id)
+                channel_name = message.chat.title or "Canal"
+                member_count = 0
+                
+                try:
+                    if message.bot:
+                        member_count = await get_channel_subscriber_count(message.bot, channel_id)
+                except:
+                    pass
+                
+                await message.reply(
+                    f"📋 **Informations du Canal**\n\n"
+                    f"**Nom :** {channel_name}\n"
+                    f"**ID :** `{channel_id}`\n"
+                    f"**Abonnés :** {member_count}\n"
+                    f"**Type :** {message.chat.type.title()}\n\n"
+                    f"Pour ajouter ce canal :\n"
+                    f"`/add_channel {channel_id} {channel_name}`",
+                    parse_mode="Markdown"
+                )
+                
+                logger.info(f"Channel ID requested: {channel_name} ({channel_id})")
+                
+            else:
+                await message.answer(
+                    "❌ Cette commande ne fonctionne que dans les canaux.\n"
+                    "Envoyez `/cid` directement dans votre canal."
+                )
+                
+        except Exception as e:
+            logger.error(f"Error getting channel ID: {e}")
+            await message.answer("❌ Erreur lors de la récupération de l'ID du canal.")
     
     @router.message(Command("help"))
     async def cmd_help(message: Message):
@@ -179,7 +292,8 @@ def setup_handlers(dp, config: Config):
                     
                     channels_text += f"📢 **{chat.title}**\n"
                     channels_text += f"• ID: {channel_id}\n"
-                    channels_text += f"• Username: @{chat.username if chat.username else 'N/A'}\n"
+                    username_text = f"@{chat.username}" if chat.username else "N/A"
+                    channels_text += f"• Username: {username_text}\n"
                     channels_text += f"• Abonnés: {member_count}\n"
                     channels_text += f"• Description: {chat.description[:50] + '...' if chat.description else 'N/A'}\n\n"
                     
