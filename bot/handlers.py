@@ -37,26 +37,42 @@ def setup_handlers(dp, config: Config):
         # Log user info for admin setup
         logger.info(f"User {username} (ID: {user_id}) sent /start command")
         
+        is_user_admin = await is_admin(user_id, config)
+        
         welcome_text = (
             f"🤖 **Bot de Gestion de Canal Telegram**\n\n"
             f"Bonjour {username} !\n"
             f"Votre ID utilisateur : `{user_id}`\n\n"
-            "Commandes disponibles :\n"
-            "• `/help` - Afficher l'aide\n"
-            "• `/register_admin mot_de_passe` - Devenir administrateur\n"
-            "• `/cid` - Obtenir l'ID du canal (dans le canal)\n"
-            "• `/add_channel ID nom` - Ajouter un canal (admin)\n"
-            "• `/status` - Statut des canaux (admin)\n"
-            "• `/channels` - Liste des canaux gérés (admin)\n"
-            "• `/customize_poll` - Personnaliser le sondage du jour (admin)\n"
-            "• `/test_welcome` - Tester le message de bienvenue (admin)\n\n"
             "Fonctionnalités :\n"
             "✅ Messages de bienvenue automatiques\n"
-            "✅ Messages quotidiens programmés\n"
-            "✅ Sondages quotidiens (500+ abonnés)\n"
-            "✅ Gestion multi-canaux"
+            "✅ Messages quotidiens programmés (9h00)\n"
+            "✅ Sondages quotidiens (10h00, si 500+ abonnés)\n"
+            "✅ Gestion multi-canaux\n\n"
+            f"**Statut :** {'🔑 Administrateur' if is_user_admin else '👤 Utilisateur'}"
         )
-        await message.answer(welcome_text, parse_mode="Markdown")
+        
+        # Create dynamic keyboard based on user permissions
+        keyboard_buttons = []
+        
+        if is_user_admin:
+            keyboard_buttons.extend([
+                [InlineKeyboardButton(text="📊 Statut des Canaux", callback_data="btn_status")],
+                [InlineKeyboardButton(text="📝 Liste des Canaux", callback_data="btn_channels")],
+                [InlineKeyboardButton(text="🗳️ Configurer Sondage", callback_data="btn_poll")],
+                [InlineKeyboardButton(text="🧪 Tester Bienvenue", callback_data="btn_test_welcome")]
+            ])
+        else:
+            keyboard_buttons.append([InlineKeyboardButton(text="🔑 Devenir Admin", callback_data="btn_become_admin")])
+        
+        # Common buttons for all users
+        keyboard_buttons.extend([
+            [InlineKeyboardButton(text="📋 Obtenir ID Canal", callback_data="btn_get_cid")],
+            [InlineKeyboardButton(text="📖 Aide", callback_data="btn_help")]
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await message.answer(welcome_text, parse_mode="Markdown", reply_markup=keyboard)
     
     @router.message(Command("register_admin"))
     async def cmd_register_admin(message: Message):
@@ -491,5 +507,242 @@ def setup_handlers(dp, config: Config):
             
         except Exception as e:
             logger.error(f"Error handling user join: {e}")
+    
+    # Callback handlers for dynamic buttons
+    @router.callback_query(F.data == "btn_status")
+    async def callback_status(callback):
+        """Handle status button callback"""
+        if not callback.from_user or not await is_admin(callback.from_user.id, config):
+            await callback.answer("❌ Accès réservé aux administrateurs.", show_alert=True)
+            return
+        
+        channels = config.get_channels()
+        if not channels:
+            await callback.message.edit_text("📊 **Statut des Canaux**\n\n❌ Aucun canal configuré.")
+            return
+        
+        status_text = "📊 **Statut des Canaux**\n\n"
+        
+        for channel_id, channel_info in channels.items():
+            try:
+                if callback.message and callback.message.bot:
+                    chat = await callback.message.bot.get_chat(channel_id)
+                    member_count = await get_channel_subscriber_count(callback.message.bot, channel_id)
+                    status_emoji = "✅" if channel_info.get('active', True) else "❌"
+                    
+                    status_text += f"{status_emoji} **{chat.title}**\n"
+                    status_text += f"• ID: `{channel_id}`\n"
+                    status_text += f"• Abonnés: {member_count}\n"
+                    status_text += f"• Actif: {'Oui' if channel_info.get('active', True) else 'Non'}\n\n"
+            except Exception as e:
+                status_text += f"❌ **{channel_info.get('name', 'Canal')}**: Erreur d'accès\n\n"
+        
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(status_text, parse_mode="Markdown", reply_markup=back_keyboard)
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_channels")
+    async def callback_channels(callback):
+        """Handle channels list button callback"""
+        if not callback.from_user or not await is_admin(callback.from_user.id, config):
+            await callback.answer("❌ Accès réservé aux administrateurs.", show_alert=True)
+            return
+        
+        channels = config.get_channels()
+        if not channels:
+            await callback.message.edit_text("📝 **Liste des Canaux**\n\n❌ Aucun canal configuré.")
+            return
+        
+        channels_text = "📝 **Liste des Canaux Gérés**\n\n"
+        
+        for channel_id, channel_info in channels.items():
+            try:
+                if callback.message and callback.message.bot:
+                    chat = await callback.message.bot.get_chat(channel_id)
+                    member_count = await get_channel_subscriber_count(callback.message.bot, channel_id)
+                    
+                    channels_text += f"📢 **{chat.title}**\n"
+                    channels_text += f"• ID: {channel_id}\n"
+                    username_text = f"@{chat.username}" if chat.username else "N/A"
+                    channels_text += f"• Username: {username_text}\n"
+                    channels_text += f"• Abonnés: {member_count}\n"
+                    channels_text += f"• Description: {chat.description[:50] + '...' if chat.description else 'N/A'}\n\n"
+                    
+            except Exception as e:
+                channels_text += f"❌ **Canal {channel_id}**: Erreur d'accès\n\n"
+        
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(channels_text, parse_mode="Markdown", reply_markup=back_keyboard)
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_poll")
+    async def callback_poll(callback):
+        """Handle poll configuration button callback"""
+        if not callback.from_user or not await is_admin(callback.from_user.id, config):
+            await callback.answer("❌ Accès réservé aux administrateurs.", show_alert=True)
+            return
+        
+        current_options = config.get_poll_options()
+        options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_options)])
+        
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            f"🗳️ **Configuration du Sondage Quotidien**\n\n"
+            f"**Options actuelles :**\n{options_text}\n\n"
+            f"Utilisez `/customize_poll` pour modifier les options.",
+            parse_mode="Markdown",
+            reply_markup=back_keyboard
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_test_welcome")
+    async def callback_test_welcome(callback):
+        """Handle test welcome button callback"""
+        if not callback.from_user or not await is_admin(callback.from_user.id, config):
+            await callback.answer("❌ Accès réservé aux administrateurs.", show_alert=True)
+            return
+        
+        test_user = callback.from_user.first_name or callback.from_user.username or "TestUser"
+        welcome_msg = format_welcome_message(config.get_welcome_message(), test_user)
+        
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            f"🧪 **Test du Message de Bienvenue**\n\n{welcome_msg}",
+            parse_mode="Markdown",
+            reply_markup=back_keyboard
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_become_admin")
+    async def callback_become_admin(callback):
+        """Handle become admin button callback"""
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            "🔑 **Devenir Administrateur**\n\n"
+            "Pour devenir administrateur, utilisez la commande :\n"
+            "`/register_admin votre_mot_de_passe`\n\n"
+            "Contactez le propriétaire du bot pour obtenir le mot de passe.",
+            parse_mode="Markdown",
+            reply_markup=back_keyboard
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_get_cid")
+    async def callback_get_cid(callback):
+        """Handle get channel ID button callback"""
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            "📋 **Obtenir l'ID d'un Canal**\n\n"
+            "Pour obtenir l'ID de votre canal :\n\n"
+            "1. Ajoutez ce bot à votre canal comme administrateur\n"
+            "2. Dans votre canal, envoyez la commande `/cid`\n"
+            "3. Le bot vous donnera l'ID et les informations du canal\n\n"
+            "**Permissions requises pour le bot :**\n"
+            "• Publier des messages\n"
+            "• Voir les informations du canal",
+            parse_mode="Markdown",
+            reply_markup=back_keyboard
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_help")
+    async def callback_help(callback):
+        """Handle help button callback"""
+        help_text = (
+            "📖 **Guide d'Utilisation**\n\n"
+            "**Commandes de Base :**\n"
+            "• `/start` - Afficher le menu principal\n"
+            "• `/help` - Afficher cette aide\n"
+            "• `/cid` - Obtenir l'ID du canal (dans le canal)\n\n"
+            "**Commandes Admin :**\n"
+            "• `/register_admin mot_de_passe` - Devenir admin\n"
+            "• `/add_channel ID nom` - Ajouter un canal\n"
+            "• `/status` - Statut des canaux\n"
+            "• `/channels` - Liste des canaux\n"
+            "• `/customize_poll` - Configurer sondages\n"
+            "• `/test_welcome` - Tester message de bienvenue\n\n"
+            "**Fonctionnement Automatique :**\n"
+            "• Messages de bienvenue pour nouveaux abonnés\n"
+            "• Messages quotidiens à 9h00\n"
+            "• Sondages quotidiens à 10h00 (si ≥500 abonnés)"
+        )
+        
+        # Add back to menu button
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Retour au Menu", callback_data="btn_back_menu")]
+        ])
+        
+        await callback.message.edit_text(help_text, parse_mode="Markdown", reply_markup=back_keyboard)
+        await callback.answer()
+
+    @router.callback_query(F.data == "btn_back_menu")
+    async def callback_back_menu(callback):
+        """Handle back to menu button callback"""
+        if not callback.from_user:
+            return
+        
+        user_id = callback.from_user.id
+        username = callback.from_user.first_name or callback.from_user.username or "Utilisateur"
+        is_user_admin = await is_admin(user_id, config)
+        
+        welcome_text = (
+            f"🤖 **Bot de Gestion de Canal Telegram**\n\n"
+            f"Bonjour {username} !\n"
+            f"Votre ID utilisateur : `{user_id}`\n\n"
+            "Fonctionnalités :\n"
+            "✅ Messages de bienvenue automatiques\n"
+            "✅ Messages quotidiens programmés (9h00)\n"
+            "✅ Sondages quotidiens (10h00, si 500+ abonnés)\n"
+            "✅ Gestion multi-canaux\n\n"
+            f"**Statut :** {'🔑 Administrateur' if is_user_admin else '👤 Utilisateur'}"
+        )
+        
+        # Create dynamic keyboard based on user permissions
+        keyboard_buttons = []
+        
+        if is_user_admin:
+            keyboard_buttons.extend([
+                [InlineKeyboardButton(text="📊 Statut des Canaux", callback_data="btn_status")],
+                [InlineKeyboardButton(text="📝 Liste des Canaux", callback_data="btn_channels")],
+                [InlineKeyboardButton(text="🗳️ Configurer Sondage", callback_data="btn_poll")],
+                [InlineKeyboardButton(text="🧪 Tester Bienvenue", callback_data="btn_test_welcome")]
+            ])
+        else:
+            keyboard_buttons.append([InlineKeyboardButton(text="🔑 Devenir Admin", callback_data="btn_become_admin")])
+        
+        # Common buttons for all users
+        keyboard_buttons.extend([
+            [InlineKeyboardButton(text="📋 Obtenir ID Canal", callback_data="btn_get_cid")],
+            [InlineKeyboardButton(text="📖 Aide", callback_data="btn_help")]
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await callback.message.edit_text(welcome_text, parse_mode="Markdown", reply_markup=keyboard)
+        await callback.answer()
     
     dp.include_router(router)
