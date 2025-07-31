@@ -27,14 +27,26 @@ def setup_handlers(dp, config: Config):
     @router.message(Command("start"))
     async def cmd_start(message: Message):
         """Handle /start command"""
+        if not message.from_user:
+            return
+            
+        user_id = message.from_user.id
+        username = message.from_user.username or message.from_user.first_name or "Utilisateur"
+        
+        # Log user info for admin setup
+        logger.info(f"User {username} (ID: {user_id}) sent /start command")
+        
         welcome_text = (
-            "🤖 **Bot de Gestion de Canal Telegram**\n\n"
+            f"🤖 **Bot de Gestion de Canal Telegram**\n\n"
+            f"Bonjour {username} !\n"
+            f"Votre ID utilisateur : `{user_id}`\n\n"
             "Commandes disponibles :\n"
             "• `/help` - Afficher l'aide\n"
-            "• `/status` - Statut des canaux\n"
-            "• `/customize_poll` - Personnaliser le sondage du jour\n"
-            "• `/test_welcome` - Tester le message de bienvenue\n"
-            "• `/channels` - Liste des canaux gérés\n\n"
+            "• `/register_admin mot_de_passe` - Devenir administrateur\n"
+            "• `/status` - Statut des canaux (admin)\n"
+            "• `/customize_poll` - Personnaliser le sondage du jour (admin)\n"
+            "• `/test_welcome` - Tester le message de bienvenue (admin)\n"
+            "• `/channels` - Liste des canaux gérés (admin)\n\n"
             "Fonctionnalités :\n"
             "✅ Messages de bienvenue automatiques\n"
             "✅ Messages quotidiens programmés\n"
@@ -42,6 +54,46 @@ def setup_handlers(dp, config: Config):
             "✅ Gestion multi-canaux"
         )
         await message.answer(welcome_text, parse_mode="Markdown")
+    
+    @router.message(Command("register_admin"))
+    async def cmd_register_admin(message: Message):
+        """Handle /register_admin command"""
+        if not message.from_user or not message.text:
+            return
+        
+        # Extract password from command
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            await message.answer("❌ Usage: `/register_admin votre_mot_de_passe`")
+            return
+        
+        password = args[1]
+        # Simple password - you can change this
+        correct_password = "admin2025"
+        
+        if password != correct_password:
+            await message.answer("❌ Mot de passe incorrect.")
+            logger.warning(f"Failed admin registration attempt by user {message.from_user.id}")
+            return
+        
+        # Add user as admin
+        user_id = message.from_user.id
+        username = message.from_user.username or message.from_user.first_name or "Admin"
+        
+        config.add_admin_user(user_id)
+        
+        await message.answer(
+            f"✅ **Félicitations !**\n\n"
+            f"Vous êtes maintenant administrateur du bot.\n"
+            f"Toutes les commandes admin sont disponibles :\n\n"
+            f"• `/status` - Voir le statut des canaux\n"
+            f"• `/channels` - Gérer les canaux\n"
+            f"• `/customize_poll` - Personnaliser les sondages\n"
+            f"• `/test_welcome` - Tester les messages de bienvenue",
+            parse_mode="Markdown"
+        )
+        
+        logger.info(f"User {username} (ID: {user_id}) successfully registered as admin")
     
     @router.message(Command("help"))
     async def cmd_help(message: Message):
