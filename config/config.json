@@ -1,6 +1,6 @@
 {
   "timezone": "Europe/Paris",
-  "admin_users": [],
+  "admin_users": [6375715245],
   "daily_messages": {
     "enabled": true,
     "hour": 9,
