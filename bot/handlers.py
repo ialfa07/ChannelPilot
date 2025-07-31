@@ -13,6 +13,9 @@ from aiogram.fsm.state import State, StatesGroup
 
 from .config import Config
 from .utils import is_admin, format_welcome_message, get_channel_subscriber_count
+from .analytics import analytics
+from .content_manager import content_manager
+from .themes import theme_manager
 
 logger = logging.getLogger(__name__)
 
